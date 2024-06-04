@@ -1,0 +1,11 @@
+1. Ingestion Script:
+The first script is responsible for ingesting documents and creating embeddings for them. It supports a variety of document formats, including CSV, EverNote, PDF, HTML, Markdown, ODT, PowerPoint, Word, and plain text. The script uses multiprocessing to load documents in parallel, and tqdm to display a progress bar. Once the documents are loaded, they are split into chunks of text using a RecursiveCharacterTextSplitter. The chunks of text are then used to create embeddings using the HuggingFaceEmbeddings class. These embeddings are stored in the Chroma vector store.
+
+2. Second Script (Running in the Background):
+The second script is a configuration script that sets up the Chroma database. It defines the folder for storing the database and the Chroma settings. The CHROMA_SETTINGS object encapsulates these configuration options and will be used when initializing the database.
+
+3. AI Chatbot Script:
+The third script is the one that runs the AI chatbot itself. It uses the LangChain package to ingest documents, create embeddings, and set up a question-answering system. The chatbot takes user queries, retrieves answers from the ingested documents, and prints the results. The user can interact with the chatbot in a command line interface. The script also provides command line arguments for hiding source documents and muting the streaming StdOut callback for LLMs.
+
+4. Summary
+In summary, these scripts work together to create an AI chatbot that can ingest documents, process them into chunks of text, create embeddings for these chunks, store these embeddings in a Chroma vectorstore, and provide answers based on the information in the ingested documents. The chatbot can be interacted with in a command line interface, and provides options for hiding source documents and muting the streaming StdOut callback for LLMs. The chatbot uses the LangChain package to perform these tasks.

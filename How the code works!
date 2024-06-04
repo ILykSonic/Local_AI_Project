@@ -1,0 +1,9 @@
+1. The chatbot needs to ingest documents and processes them into chunks of text. (It does this in the ingest.py code)
+2. Each chunk of text is then transformed into a high-dimensional vector using an embedding model (in your case, a HuggingFace model). This process is called **embedding**.
+3. These embeddings are then stored in the Chroma vector store.
+
+The purpose of this is not to store the original documents, but rather their embeddings. These embeddings capture the semantic meaning of the chunks of text in a way that a machine learning model can understand and work with.
+
+When your chatbot needs to answer a question, it can transform the question into an embedding using the same process. It can then query the Chroma vector store to find chunks of text with similar embeddings, i.e., chunks of text that are semantically similar to the question. This allows your chatbot to provide answers based on the information in the ingested documents.
+
+So, while your chatbot does read through the files it ingests, it also stores the embeddings of these files in a Chroma vector store for later use. This is a common approach in information retrieval and question answering systems. It allows the system to provide accurate and relevant answers based on the ingested documents.

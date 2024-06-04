@@ -1,23 +1,30 @@
-#!/usr/bin/env python3
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from langchain.llms import Ollama
-import chromadb
 import os
 import argparse
 import time
+from yaspin import yaspin
+import torch
 
-model = os.environ.get("MODEL", "mistral")
-# For embeddings model, the example uses a sentence-transformers model
-# https://www.sbert.net/docs/pretrained_models.html 
-# "The all-mpnet-base-v2 model provides the best quality, while all-MiniLM-L6-v2 is 5 times faster and still offers good quality."
+print("GPU is being used:", torch.cuda.is_available())
+
+model = os.environ.get("MODEL", "mistral")  # Change each time you switch models
+# https://www.sbert.net/docs/pretrained_models.html
+
+# These three get information from chroma. If it cannot be obtained it will default to the information after the comma
+# You can set an Embedding model yourself, or use the MiniLM-L6. I suggest the LM-L6, its MTEB benchmark is great
 embeddings_model_name = os.environ.get("EMBEDDINGS_MODEL_NAME", "all-MiniLM-L6-v2")
+# If you set PD, you can choose where you store your chroma database. Otherwise, it will save to a folder titled "db"
 persist_directory = os.environ.get("PERSIST_DIRECTORY", "db")
-target_source_chunks = int(os.environ.get('TARGET_SOURCE_CHUNKS',4))
+# This determines the number of chunks the chatbot tries to receive from the database.
+# Higher = Slower & More Accurate/More Detailed  Lower = Faster & Less Accurate/Less Detailed
+target_source_chunks = int(os.environ.get('TARGET_SOURCE_CHUNKS', 30))
 
 from constants import CHROMA_SETTINGS
+
 
 def main():
     # Parse the command line arguments
@@ -32,34 +39,49 @@ def main():
 
     llm = Ollama(model=model, callbacks=callbacks)
 
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents= not args.hide_source)
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever,
+                                     return_source_documents=not args.hide_source)
     # Interactive questions and answers
     while True:
-        query = input("\nEnter a query: ")
+        query = input("\nEnter a query, press enter when finished: ")
         if query == "exit":
             break
         if query.strip() == "":
             continue
 
+        with yaspin(text="Generating answer...", color="green") as spinner:
+            start = time.time()
+            res = qa(query)
+            end = time.time()
+            # Calculate the time it took to generate the answer
+            duration = end - start
+            # Print the time it took to generate the answer
+            print(f"\n> Time taken to generate the answer: {duration} seconds")
+            spinner.ok("✅ ")
+
         # Get the answer from the chain
-        start = time.time()
-        res = qa(query)
         answer, docs = res['result'], [] if args.hide_source else res['source_documents']
-        end = time.time()
 
         # Print the result
         print("\n\n> Question:")
         print(query)
         print(answer)
 
+        # Print a separator
+        print("\n" + "-" * 40)
+        # Print a separator
+        print("\n" + "-" * 40)
+
         # Print the relevant sources used for the answer
-        for document in docs:
+        for document in docs[:2]:  # Change this line depending on how many sources you want.
             print("\n> " + document.metadata["source"] + ":")
             print(document.page_content)
 
+
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='privateGPT: Ask questions to your documents without an internet connection, '
-                                                 'using the power of LLMs.')
+    parser = argparse.ArgumentParser(
+        description='privateGPT: Ask questions to your documents without an internet connection, '
+                    'using the power of LLMs.')
     parser.add_argument("--hide-source", "-S", action='store_true',
                         help='Use this flag to disable printing of source documents used for answers.')
 
