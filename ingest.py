@@ -1,11 +1,14 @@
 import glob  # Used to find all the file paths that match a specified pattern, useful for loading documents.
 from multiprocessing import Pool  # Allows for parallel processing to speed up document loading and processing.
-from tqdm import tqdm  # A library for displaying progress bars in loops, making it easier to monitor the progress of tasks.
+from tqdm import \
+    tqdm  # A library for displaying progress bars in loops, making it easier to monitor the progress of tasks.
 import torch  # PyTorch library, used for working with our GPU
 import time  # Provides various time-related functions, used for measuring execution time.
-import os  # Provides a way to interact with the operating system, used for environment variables and path manipulations.
+import \
+    os  # Provides a way to interact with the operating system, used for environment variables and path manipulations.
 import warnings  # Used to control the display of warnings.
-from langchain.text_splitter import RecursiveCharacterTextSplitter  # splits the document text into smaller chunks before turning it into vectors.
+from langchain.text_splitter import \
+    RecursiveCharacterTextSplitter  # splits the document text into smaller chunks before turning it into vectors.
 # This ensures that each chunk is small enough to be processed by the embedding model without exceeding token limits.
 # As a result, it creates multiple smaller vectors instead of one large vector for the entire document.
 from constants import CHROMA_SETTINGS
@@ -21,7 +24,8 @@ import io  # Core tools for working with streams (like in-memory files).
 import shutil  # Deletes old database if a new one is created with the same embedding model
 from sentence_transformers import SentenceTransformer  # Library for generating sentence embeddings.
 import re
-import uuid  # Generates unique identifier for each chunk before writing it to our vector store. Ensures that each chunk has its own identifier (preventing duplicate id issues)
+import \
+    uuid  # Generates unique identifier for each chunk before writing it to our vector store. Ensures that each chunk has its own identifier (preventing duplicate id issues)
 
 # This suppresses unnecessary warnings when running the code
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 3 suppresses all logs (set to '2' to see only errors)
@@ -34,6 +38,8 @@ os.environ['PATH'] += os.pathsep + r'C:\Users\njmadmin\AppData\Local\Programs\Te
 # CUDA settings (Both these settings are determined by what is displayed in the task manager on your pc)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # specify which GPU(s) to be used
+
+
 # (check to make sure the number is the same when switching hardware)
 
 # Prints all cuda info (mainly for testing purposes)
@@ -42,6 +48,7 @@ def print_cuda_info():
     print("Current CUDA Device Index:", torch.cuda.current_device())
     print("Current CUDA Device Name:", torch.cuda.get_device_name(0))
     print("PyTorch Version:", torch.__version__)
+
 
 # Document Loading Config
 # Import various document loaders from the langchain_community package
@@ -90,12 +97,15 @@ LOADER_MAPPING = {
     ".docx": (UnstructuredWordDocumentLoader, {}),  # Use UnstructuredWordDocumentLoader for Word document files
 }
 
+
 # Document class to encapsulate the content and metadata of a document
 class Document:
     def __init__(self, page_content, metadata):
         self.page_content = page_content  # Contains the text of each page in our documents
         self.metadata = metadata  # Metadata is details about the document that aren't the contents of the document (e.g., file name source file path)
         # This helps in organization as well as finding the source file for the information
+
+
 # End of Document Loading Config
 
 # OCR Document and processing
@@ -106,6 +116,7 @@ def preprocess_image_for_ocr(image):
     # Resize the image to double its original dimensions using the LANCZOS filter for better OCR accuracy
     # common practice as larger text is easier for the OCR to read
     return image.resize((image.width * 2, image.height * 2), Image.LANCZOS)
+
 
 def extract_text_with_ocr(file_path):
     # Open the PDF document using PyMuPDF
@@ -156,6 +167,7 @@ def extract_text_with_ocr(file_path):
     # Create and return a Document object with the extracted text and metadata
     return [Document(page_content=full_text, metadata={"source": file_path})]
 
+
 def detect_headers(text):
     # Split the text into lines
     lines = text.split('\n')
@@ -173,6 +185,7 @@ def detect_headers(text):
             headers[current_header].append(line)
 
     return headers
+
 
 def load_single_document(file_path):
     try:
@@ -202,6 +215,8 @@ def load_single_document(file_path):
         # Print an error message if an exception occurs
         print(f"Error processing file {file_path}: {e}")
         return None
+
+
 # End of OCR Document Processing
 
 # Loading and processing documents
@@ -245,6 +260,7 @@ def load_documents(source_dir, ignored_files=[]):
     # Return the list of loaded documents
     return documents
 
+
 # Function to process documents by loading, splitting them into chunks, and returning the chunks
 def process_documents(ignored_files=[]):
     # Print a message to indicate the start of the loading process
@@ -269,12 +285,13 @@ def process_documents(ignored_files=[]):
 
     # Initialize a RecursiveCharacterTextSplitter to split the documents into chunks
     # chunk_size and chunk overlap were defined earlier
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap) # line sets up a tool we use
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size,
+                                                   chunk_overlap=chunk_overlap)  # line sets up a tool we use
     # Record the start time to measure how long the splitting process takes
     start_time = time.time()
     # Split the loaded documents into smaller chunks of text,
     # This makes it easier to process the text later, especially for tasks like machine learning or natural language processing
-    texts = text_splitter.split_documents(documents) # This line actually divides them
+    texts = text_splitter.split_documents(documents)  # This line actually divides them
     # Record the end time to measure the total splitting duration
     end_time = time.time()
     # Calculate the duration of the splitting process
@@ -283,6 +300,7 @@ def process_documents(ignored_files=[]):
     print(f"Split into {len(texts)} chunks of text (max. {chunk_size} tokens each) in {split_duration:.2f} seconds")
     # Return the list of text chunks created from the documents
     return texts
+
 
 # End of loading and processing documents
 
@@ -312,6 +330,7 @@ def does_vectorstore_exist(persist_directory, embedding_model):
     # Return False if any of the checks fail
     return False
 
+
 # End of vector store check
 
 # Main Function
@@ -332,7 +351,10 @@ def main():
         collection = db.get()
         texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
         print(f"Creating embeddings. May take some minutes...")
+
+        embedding_start_time = time.time()  # Start time for embedding creation
         db.add_documents(texts)
+        embedding_end_time = time.time()  # End time for embedding creation
     else:
         if os.path.exists(vectorstore_dir):
             shutil.rmtree(vectorstore_dir)
@@ -343,23 +365,24 @@ def main():
         batch_size = 2000
         text_batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
 
+        embedding_start_time = time.time()  # Start time for embedding creation
         for i, text_batch in enumerate(text_batches):
             print(f"Processing batch {i + 1} of {len(text_batches)}")
             if i == 0:
                 db = Chroma.from_documents(text_batch, embeddings, persist_directory=vectorstore_dir)
             else:
                 db.add_documents(text_batch)
+        embedding_end_time = time.time()  # End time for embedding creation
 
     end_time = time.time()
     ingestion_duration = end_time - start_time
+    embedding_duration = embedding_end_time - embedding_start_time  # Duration for embedding creation
+
+    print(f"Embedding creation process took {embedding_duration:.2f} seconds.")  # Print embedding creation time
+    print(f"Ingestion process took {ingestion_duration / 60:.2f} minutes.")
     print(f"Data ingestion has finished, you can ask the chatbot questions regarding your files.")
-    print(f"Vectorstore creation took {ingestion_duration:.2f} seconds.")
+
 
 # Run Main Function
-if __name__ == "__main__":
-    main()
-# End of main function
-
-
 if __name__ == "__main__":
     main()
