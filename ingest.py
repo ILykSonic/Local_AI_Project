@@ -1,3 +1,4 @@
+
 import glob  # Used to find all the file paths that match a specified pattern, useful for loading documents.
 from multiprocessing import Pool  # Allows for parallel processing to speed up document loading and processing.
 from tqdm import tqdm  # A library for displaying progress bars in loops, making it easier to monitor the progress of tasks.
@@ -107,54 +108,41 @@ def preprocess_image_for_ocr(image):
     # common practice as larger text is easier for the OCR to read
     return image.resize((image.width * 2, image.height * 2), Image.LANCZOS)
 
-def extract_text_with_ocr(file_path):
-    # Open the PDF document using PyMuPDF
+
+def extract_text_with_ocr(file_path: str) -> list:
+    """
+    Extract text (native + OCR) from *each* page of a PDF and return a
+    list[Document] where every Document represents one page and carries
+    {"source": <pdf-path>, "page": <1-based-page-number>} in its metadata.
+    """
     doc = fitz.open(file_path)
-    full_text = ""  # Initialize an empty string to hold the extracted text
+    documents = []  # ← this replaces `full_text`
 
-    # Iterate through each page in the document
-    for page_num, page in enumerate(doc):
-        # Extract text directly from the page
-        text = page.get_text()
-        full_text += text  # Append the extracted text to the full_text string
+    for page_num, page in enumerate(doc, start=1):
 
-        # Get text blocks from the page
+        # ---- 1) native text -------------------------------------------------
+        page_text = page.get_text()
+
+        # ---- 2) (optional) OCR if the page is mostly images -----------------
         blocks = page.get_text("blocks")
-        # If no text blocks are found, print a message
-        # This is how we handle blank pages
-        if len(blocks) == 0:
-            print(f"No text blocks found on page {page_num + 1} of {file_path}")
-
-        # If there are text blocks but the text density is low (indicating possible images with text)
-        # Calculate the text density to determine if the page likely contains images with text
-        # len(text) / len(blocks) calculates the ratio of text length to the number of text blocks
-        # A low value (< 50) suggests that the page has many blocks (possibly images) but relatively little text
-        if len(blocks) > 0 and len(text) / len(blocks) < 50:
-            # Iterate through each image on the page
-            for img_index in page.get_images(full=True):
-                xref = img_index[0]
-                # Extract image details using the cross-reference identifier
-                img_details = doc.extract_image(xref)
-                img_bytes = img_details['image']
-
-                # Converts image bytes to an in-memory binary stream so that PIL can read it as an image
+        if blocks and len(page_text) / len(blocks) < 50:
+            for xref, *_ in page.get_images(full=True):
+                img_bytes = doc.extract_image(xref)["image"]
                 image = Image.open(io.BytesIO(img_bytes))
+                processed = preprocess_image_for_ocr(image)
+                page_text += pytesseract.image_to_string(processed, lang="eng")
 
-                # Preprocess the image for better OCR results
-                # This includes converting the image to RGB if it is in CMYK mode and resizing it to improve OCR accuracy
-                processed_image = preprocess_image_for_ocr(image)
+        # ---- 3) wrap this single page into a Document -----------------------
+        documents.append(
+            Document(
+                page_content=page_text,
+                metadata={"source": file_path, "page": page_num}
+            )
+        )
 
-                # Perform OCR on the preprocessed image to extract text
-                # pytesseract.image_to_string processes the image and returns the recognized text
-                ocr_text = pytesseract.image_to_string(processed_image, lang='eng')
+    doc.close()
+    return documents  # list[Document]  (not one big blob)
 
-                # Append the OCR-extracted text to the full_text string
-                # This combines all text extracted directly and via OCR for the entire document
-                full_text += ocr_text
-
-    doc.close()  # Close the PDF document
-    # Create and return a Document object with the extracted text and metadata
-    return [Document(page_content=full_text, metadata={"source": file_path})]
 
 def detect_headers(text):
     # Split the text into lines
@@ -176,32 +164,38 @@ def detect_headers(text):
 
 def load_single_document(file_path):
     try:
-        # Determine the file extension eg, .txt, .pdf
         ext = "." + file_path.rsplit(".", 1)[-1]
-        # Check if the file extension is supported by LOADER_MAPPING
+
+        # ── PDF ───────────────────────────────────────────────
+        if ext == ".pdf":
+            # ▸ returns a list[Document] where each .metadata already
+            #   contains {"source": file_path, "page": page_num}
+            return extract_text_with_ocr(file_path)
+
+        # ── all other supported types ─────────────────────────
         if ext in LOADER_MAPPING:
-            if ext == '.pdf':
-                # If the file is a PDF, use the extract_text_with_ocr function
-                documents = extract_text_with_ocr(file_path)
-                for doc in documents:
-                    doc.headers = detect_headers(doc.page_content)
-                return documents
-            else:
-                # Use the appropriate loader for other supported file types
-                loader_class, loader_args = LOADER_MAPPING[ext]
-                loader = loader_class(file_path, **loader_args)
-                documents = loader.load()
-                for doc in documents:
-                    doc.headers = detect_headers(doc.page_content)
-                # Create Document objects with the extracted text and metadata
-                # Return statement is for both pdfs and other files
-                return [Document(page_content=doc.page_content, metadata={"source": file_path}) for doc in documents]
-        # Raise an error if the file extension is not supported
-        raise ValueError(f"Unsupported file extension '{ext}'")
+            loader_class, loader_args = LOADER_MAPPING[ext]
+            loader = loader_class(file_path, **loader_args)
+            docs = loader.load()
+
+            wrapped = []
+            for doc in docs:
+                wrapped.append(
+                    Document(
+                        page_content=doc.page_content,
+                        # keep whatever metadata the loader produced
+                        metadata={**doc.metadata, "source": file_path}
+                    )
+                )
+            return wrapped
+
+        # anything else → error
+        raise ValueError(f"Unsupported file extension: {ext}")
+
     except Exception as e:
-        # Print an error message if an exception occurs
-        print(f"Error processing file {file_path}: {e}")
+        print(f"Error processing {file_path}: {e}")
         return None
+
 # End of OCR Document Processing
 
 # Loading and processing documents
@@ -366,3 +360,4 @@ def main():
 # Run Main Function
 if __name__ == "__main__":
     main()
+
